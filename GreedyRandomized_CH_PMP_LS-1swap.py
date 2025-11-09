@@ -3,6 +3,7 @@ import math
 import random
 import time
 import pandas as pd
+from datetime import datetime
 
 def read_instance(file_path):
     """
@@ -188,6 +189,57 @@ def calculate_total_cost(clients, sites, open_sites):
 
     return total_cost, assignments
 
+
+# --------------------------------------------
+# Local Search: 1-Swap Best Improvement
+# --------------------------------------------
+def local_search_1swap(clients, sites, open_sites, current_cost):
+    """
+    Performs a 1-swap best-improvement local search.
+    Iteratively tries swapping one open site with one closed site
+    to reduce the total cost of the current solution.
+    Stops when no improving swap is found.
+    """
+
+    improved = True
+    best_cost = current_cost
+    best_sites = open_sites[:]
+
+    while improved:
+        improved = False
+        best_swap = None
+
+        # Explore all (i, j) pairs where i ∈ open_sites, j ∉ open_sites
+        for i in best_sites:
+            for j, _, _ in sites:
+                if j in best_sites:
+                    continue
+
+                # Simulate swap: remove i, add j
+                candidate_sites = best_sites[:]
+                candidate_sites.remove(i)
+                candidate_sites.append(j)
+
+                # Evaluate the new cost for this candidate configuration
+                new_cost, _ = calculate_total_cost(clients, sites, candidate_sites)
+
+                # If this swap improves the total cost, keep it
+                if new_cost < best_cost:
+                    best_cost = new_cost
+                    best_swap = (i, j)
+                    improved = True
+
+        # Apply the best swap found in this iteration
+        if improved and best_swap:
+            i, j = best_swap
+            best_sites.remove(i)
+            best_sites.append(j)
+
+            print(f"  → Swap applied: closed {i}, opened {j} | New cost = {best_cost:.4f}")
+
+    return best_sites, best_cost
+
+
 # --------------------------------------------
 # Automatic Main: Process all instances of a folder
 # --------------------------------------------
@@ -248,21 +300,41 @@ def main():
         elapsed_time = end_time - start_time
 
         print(f"  -> Completed in {elapsed_time:.3f} s | Cost: {total_cost:.4f}")
+        
+        # After constructive phase
+        total_cost, assignments = calculate_total_cost(data["clients"], data["sites"], open_sites)
+
+        # --- Apply Local Search ---
+        print("\nApplying Local Search (1-swap best improvement)...")
+        start_time_ls = time.time()
+        improved_sites, improved_cost = local_search_1swap(
+            data["clients"], data["sites"], open_sites, total_cost
+        )
+        end_time_ls = time.time()
+
+        ls_time = end_time_ls - start_time_ls
+        abs_diff = total_cost - improved_cost
+        improvement_pct = (abs_diff / total_cost * 100) if total_cost != 0 else 0
+
+        print(f"Local Search completed. Improved cost: {improved_cost:.4f}")
+        print(f"Improvement: {abs_diff:.4f} ({improvement_pct:.2f}%)")
+        print(f"Execution time: {ls_time:.4f}s\n")
 
         # Save result to list
         results.append({
             "Instance": file_name,
             "Heuristic_Cost": total_cost,
             "Heuristic_Time(s)": elapsed_time,
-            "LocalSearch_Cost": None,
-            "LocalSearch_Time(s)": None,
-            "Absolute_Diff": None,
-            "Improvement(%)": None
+            "LocalSearch_Cost": improved_cost,
+            "LocalSearch_Time(s)": ls_time,
+            "Absolute_Diff": abs_diff,
+            "Improvement(%)": improvement_pct
         })
 
     # Convert results to DataFrame and export to Excel
     df = pd.DataFrame(results)
-    output_path = os.path.join(base_dir, "PMP_Results.xlsx")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_path = os.path.join(base_dir, f"PMP_Results_{timestamp}.xlsx")
     df.to_excel(output_path, index=False)
     print(f"\n✅ All results saved successfully to '{output_path}'")
 
